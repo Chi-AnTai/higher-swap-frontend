@@ -14,6 +14,9 @@ import routerABI from "./routerABI.json";
 import higherSwapABI from "./higherSwapABI.json";
 import { calcSwappedAmount } from "@dyson-finance/dyson-interface-sdk/calculations";
 import Select from "react-select";
+import { ToastContainer, toast } from 'react-toastify';
+import "react-toastify/dist/ReactToastify.css";
+import ClipLoader from "react-spinners/ClipLoader";
 
 // 1. Get projectId
 const projectId = "dd11e7011e27d464fe707b82313e7879";
@@ -57,6 +60,22 @@ const sepoliaConfig = {
   fullfillToken0: false,
 };
 
+const polygonEvmConfig = {
+  higherSwap: "",
+  pair: "0xEce7244a0e861C841651401fC22cEE577fEE90AF",
+  router: "0xADa6e69781399990d42bEcB1a9427955FFA73Bdc",
+  tokenOut: "0xA8CE8aee21bC2A48a5EF670afCc9274C7bbbC035",
+  fullfillToken0: false,
+}
+
+const lineaConfig = {
+  higherSwap: "",
+  pair: "0xCeC911f803D984ae2e5A134b2D15218466993869",
+  router: "0xa33E48EF82e697143208254FDe53Bf624f2C87E4",
+  tokenOut: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff",
+  fullfillToken0: true,
+}
+
 const timeSelectOption = [
   { value: 86400, label: "1 day" },
   { value: 86400 * 3, label: "3 days" },
@@ -65,17 +84,19 @@ const timeSelectOption = [
 ];
 
 function App() {
+  // TODO: change config based on connected chain
   const { address, chainId, isConnected } = useWeb3ModalAccount();
   const { walletProvider } = useWeb3ModalProvider();
   const [amountIn, setAmountIn] = useState(0);
   const [amountOut, setAmountOut] = useState(0n);
-  // const [limitOrderAmountIn, setLimitOrderAmountIn] = useState(0);
   const [limitOrderAmountOut, setLimitOrderAmountOut] = useState(0n);
 
   const [reserves, setReserves] = useState([0n, 0n]);
   const [premium, setPremium] = useState(0n);
   const [timeSelect, setTimeSelect] = useState(timeSelectOption[0]);
   const [position, setPosition] = useState()
+  const [isLoading, setIsLoading] = useState(false)
+  const isButtonDisabled = parseFloat(amountIn) > 0.00001
 
   const fetchPairInfo = async () => {
     const ethersProvider = new providers.Web3Provider(walletProvider);
@@ -169,8 +190,13 @@ function App() {
             placeholder="0.00001"
             autoFocus
           />
-          ETH
+          <span style={{marginLeft: "10px"}}>ETH</span>
         </div>
+        <div style={{marginBottom: "20px"}}>
+          {
+            "Swap ETH amount should <= 0.00001 to prevent the insufficent liquidity"
+          }
+          </div>
         <div
           style={{
             display: "flex",
@@ -185,6 +211,7 @@ function App() {
               value={utils.formatUnits(amountOut, "6")}
               disabled={true}
             />
+            <span style={{margin: "10px"}}>USDC</span>
             <button
               style={{
                 backgroundColor: "#008CBA",
@@ -193,16 +220,26 @@ function App() {
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer",
+                opacity: isButtonDisabled ? 0.4 : 1
               }}
               onClick={async () => {
-                const ethersProvider = new providers.Web3Provider(walletProvider);
-                const signer = await ethersProvider.getSigner();
+                setIsLoading(true)
+                try {
+                  const ethersProvider = new providers.Web3Provider(walletProvider);
+                  const signer = await ethersProvider.getSigner();
 
-                const router = new Contract(sepoliaConfig.router, routerABI, signer)
-                await router.swapETHIn(sepoliaConfig.tokenOut, 1, await  signer.getAddress(), 0, {value: utils.parseEther(amountIn)})
+                  const router = new Contract(sepoliaConfig.router, routerABI, signer)
+                  let tx = await router.swapETHIn(sepoliaConfig.tokenOut, 1, await  signer.getAddress(), 0, {value: utils.parseEther(amountIn)})
+                  await ethersProvider.waitForTransaction(tx.hash)
+                  toast.success("Swap success")
+                } catch (e) {
+
+                }
+                setIsLoading(false)
               }}
+              disabled={isButtonDisabled}
             >
-              Swap Now
+              {isLoading ? <ClipLoader size={10}/> : "Swap Now"}
             </button>
           </div>
           <div>
@@ -211,6 +248,7 @@ function App() {
               value={utils.formatUnits(limitOrderAmountOut, "6")}
               disabled={true}
             />
+            <span style={{margin: "10px"}}>USDC</span>
             <button
               style={{
                 backgroundColor: "#008CBA",
@@ -219,9 +257,12 @@ function App() {
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer",
+                opacity: isButtonDisabled ? 0.4 : 1
               }}
               onClick={async () => {
-                const ethersProvider = new providers.Web3Provider(walletProvider);
+                setIsLoading(true)
+                try {
+                  const ethersProvider = new providers.Web3Provider(walletProvider);
                 const signer = await ethersProvider.getSigner();
             
                 const higherSwap = new Contract(sepoliaConfig.higherSwap,higherSwapABI, signer)
@@ -248,9 +289,15 @@ function App() {
                   positionIndex: result.args.index
                 })
                 console.log(result)
+                toast.success("Place limit order success")
+                } catch (e) {
+
+                }
+                setIsLoading(false)
               }}
+              disabled={isButtonDisabled}
             >
-              {`Place Limit Order`}
+              {isLoading ? <ClipLoader size={10}/> : "Place Limit Order"}
             </button>
             <div>
               {`get ${
@@ -270,20 +317,74 @@ function App() {
           </div>
         </div>
         <div>
-          Your Position
+          <div style={{margin: "20px"}}>
+            Your Position
+          </div>
+          
           {position && <div style={{}}>
             <div>
-              {`ETH amount: ${utils.formatEther(position.ethAmount)}`}
+              <div>
+                {`ETH amount: ${utils.formatEther(position.ethAmount)}`}
+              </div>
+              <div>
+                {`USDC amount: ${utils.formatUnits(position.usdcAmount, "6")}`}
+              </div>
+              <div>
+                {`due time ${position.due.toLocaleString()}`}
+              </div>
             </div>
             <div>
-              {`USDC amount: ${utils.formatUnits(position.usdcAmount, "6")}`}
+            <button
+              style={{
+                backgroundColor: "red",
+                color: "white",
+                padding: "10px 20px",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+              onClick={async () => {
+                setIsLoading(true)
+                try {
+                  const ethersProvider = new providers.Web3Provider(walletProvider);
+                const signer = await ethersProvider.getSigner();
+            
+                const higherSwap = new Contract(sepoliaConfig.higherSwap,higherSwapABI, signer)
+                // function fullfillNote(address noteOwner, uint index, address fullfillTokenAddress, bool fullfillToken0)
+                let tx = await higherSwap.fullfillNote(
+                  await signer.getAddress(),
+                  position.positionIndex,
+                  sepoliaConfig.tokenOut,
+                  sepoliaConfig.fullfillToken0,
+                )
+                await ethersProvider.waitForTransaction(tx.hash)
+                toast.success("Fullfill order success")
+                setPosition(null)
+                } catch (e) {
+
+                }
+                setIsLoading(false)
+              }}
+            >
+              {isLoading ? <ClipLoader size={10}/> : "Fullfill order only for Demo purpose"}
+            </button>
             </div>
-            <div>
-              {`due time ${position.due.toLocaleString()}`}
-            </div>
+            
           </div>}
         </div>
       </div>
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
     </div>
   );
 }
